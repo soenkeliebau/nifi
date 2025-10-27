@@ -900,3 +900,9 @@ export interface ChangeColorRequest {
     revision: Revision;
     style: any | null;
 }
+
+export interface ShowConnectionsDialogRequest {
+    componentId: string;
+    componentName: string;
+    direction: 'upstream' | 'downstream';
+}

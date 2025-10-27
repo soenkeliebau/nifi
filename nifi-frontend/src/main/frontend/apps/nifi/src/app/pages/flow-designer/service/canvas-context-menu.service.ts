@@ -40,6 +40,7 @@ import {
     openChangeProcessorVersionDialog,
     openChangeVersionDialogRequest,
     openCommitLocalChangesDialogRequest,
+    openConnectionsDialog,
     openForceCommitLocalChangesDialogRequest,
     openRevertLocalChangesDialogRequest,
     openSaveVersionDialogRequest,
@@ -280,24 +281,22 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
         menuItems: [
             {
                 condition: (selection: any) => {
-                    // TODO - hasUpstream
-                    return false;
+                    return this.canvasUtils.hasUpstream(selection);
                 },
                 clazz: 'icon',
                 text: 'Upstream',
-                action: () => {
-                    // TODO - showUpstream
+                action: (selection: any) => {
+                    this.showUpstreamConnections(selection);
                 }
             },
             {
                 condition: (selection: any) => {
-                    // TODO - hasDownstream
-                    return false;
+                    return this.canvasUtils.hasDownstream(selection);
                 },
                 clazz: 'icon',
                 text: 'Downstream',
-                action: () => {
-                    // TODO - showDownstream
+                action: (selection: any) => {
+                    this.showDownstreamConnections(selection);
                 }
             }
         ]
@@ -1378,6 +1377,50 @@ export class CanvasContextMenu implements ContextMenuDefinitionProvider {
         this.allMenus.set(this.UPSTREAM_DOWNSTREAM.id, this.UPSTREAM_DOWNSTREAM);
         this.allMenus.set(this.ALIGN.id, this.ALIGN);
         this.allMenus.set(this.DOWNLOAD.id, this.DOWNLOAD);
+    }
+
+    /**
+     * Shows upstream connections for the selected component.
+     *
+     * @param selection The selected component
+     */
+    private showUpstreamConnections(selection: d3.Selection<any, any, any, any>): void {
+        if (selection.size() !== 1) {
+            return;
+        }
+
+        const component: any = selection.datum();
+        this.store.dispatch(
+            openConnectionsDialog({
+                request: {
+                    componentId: component.id,
+                    componentName: component.component?.name || component.id,
+                    direction: 'upstream'
+                }
+            })
+        );
+    }
+
+    /**
+     * Shows downstream connections for the selected component.
+     *
+     * @param selection The selected component
+     */
+    private showDownstreamConnections(selection: d3.Selection<any, any, any, any>): void {
+        if (selection.size() !== 1) {
+            return;
+        }
+
+        const component: any = selection.datum();
+        this.store.dispatch(
+            openConnectionsDialog({
+                request: {
+                    componentId: component.id,
+                    componentName: component.component?.name || component.id,
+                    direction: 'downstream'
+                }
+            })
+        );
     }
 
     getMenu(menuId: string): ContextMenuDefinition | undefined {

@@ -84,6 +84,7 @@ import {
     SaveToVersionControlRequest,
     SaveVersionDialogRequest,
     SelectComponentsRequest,
+    ShowConnectionsDialogRequest,
     StartComponentRequest,
     StartComponentResponse,
     StartComponentsRequest,
@@ -899,4 +900,9 @@ export const openChangeProcessorVersionDialog = createAction(
 export const openChangeColorDialog = createAction(
     `${CANVAS_PREFIX} Open Change Color Dialog`,
     props<{ request: ChangeColorRequest[] }>()
+);
+
+export const openConnectionsDialog = createAction(
+    `${CANVAS_PREFIX} Open Connections Dialog`,
+    props<{ request: ShowConnectionsDialogRequest }>()
 );

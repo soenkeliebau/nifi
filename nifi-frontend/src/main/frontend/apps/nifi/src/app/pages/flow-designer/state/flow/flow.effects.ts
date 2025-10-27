@@ -158,6 +158,8 @@ import { ErrorHelper } from '../../../../service/error-helper.service';
 import { selectConnectedStateChanged } from '../../../../state/cluster-summary/cluster-summary.selectors';
 import { resetConnectedStateChanged } from '../../../../state/cluster-summary/cluster-summary.actions';
 import { ChangeColorDialog } from '../../ui/canvas/change-color-dialog/change-color-dialog.component';
+import { ConnectionsDialog, ConnectionItem } from '../../ui/canvas/connections-dialog/connections-dialog.component';
+import * as d3 from 'd3';
 import {
     resetPropertyVerificationState,
     verifyProperties
@@ -4612,6 +4614,112 @@ export class FlowEffects {
                                 );
                             }
                         });
+                        dialogRef.close();
+                    });
+                })
+            ),
+        { dispatch: false }
+    );
+
+    showConnections$ = createEffect(
+        () =>
+            this.actions$.pipe(
+                ofType(FlowActions.openConnectionsDialog),
+                concatLatestFrom(() => this.store.select(selectCurrentProcessGroupId)),
+                map(([action, processGroupId]) => {
+                    const request = action.request;
+                    const allConnections = d3.selectAll('g.connection');
+                    const connections: ConnectionItem[] = [];
+
+                    // Find matching connections based on direction
+                    allConnections.each(function (this: any, d: any) {
+                        if (request.direction === 'upstream' && d.destinationId === request.componentId) {
+                            // Upstream connections: where the selected component is the destination
+                            connections.push({
+                                id: d.id,
+                                name: d.component?.name || d.id,
+                                sourceId: d.sourceId,
+                                sourceName: d.component?.source?.name || 'Unknown',
+                                sourceType: d.sourceType,
+                                sourceComponentType: d.component?.source?.type || 'Unknown',
+                                sourceGroupId: d.sourceGroupId,
+                                destinationId: d.destinationId,
+                                destinationName: d.component?.destination?.name || 'Unknown',
+                                destinationType: d.destinationType,
+                                destinationComponentType: d.component?.destination?.type || 'Unknown',
+                                destinationGroupId: d.destinationGroupId,
+                                relationships: d.component?.selectedRelationships || []
+                            });
+                        } else if (request.direction === 'downstream' && d.sourceId === request.componentId) {
+                            // Downstream connections: where the selected component is the source
+                            connections.push({
+                                id: d.id,
+                                name: d.component?.name || d.id,
+                                sourceId: d.sourceId,
+                                sourceName: d.component?.source?.name || 'Unknown',
+                                sourceType: d.sourceType,
+                                sourceComponentType: d.component?.source?.type || 'Unknown',
+                                sourceGroupId: d.sourceGroupId,
+                                destinationId: d.destinationId,
+                                destinationName: d.component?.destination?.name || 'Unknown',
+                                destinationType: d.destinationType,
+                                destinationComponentType: d.component?.destination?.type || 'Unknown',
+                                destinationGroupId: d.destinationGroupId,
+                                relationships: d.component?.selectedRelationships || []
+                            });
+                        }
+                    });
+
+                    return {
+                        title: `${request.direction === 'upstream' ? 'Upstream' : 'Downstream'} Connections - ${request.componentName}`,
+                        connections,
+                        processGroupId,
+                        direction: request.direction
+                    };
+                }),
+                tap(({ title, connections, processGroupId, direction }) => {
+                    const dialogRef = this.dialog.open(ConnectionsDialog, {
+                        ...MEDIUM_DIALOG,
+                        data: {
+                            title,
+                            connections,
+                            direction
+                        }
+                    });
+
+                    dialogRef.componentInstance.goToConnection.pipe(take(1)).subscribe((payload) => {
+                        const { connection, direction } = payload;
+
+                        // For upstream, navigate to the source; for downstream, navigate to the destination
+                        const targetId = direction === 'upstream' ? connection.sourceId : connection.destinationId;
+                        const targetType = direction === 'upstream' ? connection.sourceType : connection.destinationType;
+                        const targetGroupId = direction === 'upstream' ? connection.sourceGroupId : connection.destinationGroupId;
+
+                        // Convert the connection endpoint type to ComponentType
+                        let componentType: ComponentType;
+                        if (targetType.includes('PROCESSOR')) {
+                            componentType = ComponentType.Processor;
+                        } else if (targetType.includes('INPUT_PORT')) {
+                            componentType = ComponentType.InputPort;
+                        } else if (targetType.includes('OUTPUT_PORT')) {
+                            componentType = ComponentType.OutputPort;
+                        } else if (targetType.includes('FUNNEL')) {
+                            componentType = ComponentType.Funnel;
+                        } else if (targetType.includes('REMOTE')) {
+                            componentType = ComponentType.RemoteProcessGroup;
+                        } else {
+                            componentType = ComponentType.ProcessGroup;
+                        }
+
+                        this.store.dispatch(
+                            FlowActions.navigateToComponent({
+                                request: {
+                                    id: targetId,
+                                    type: componentType,
+                                    processGroupId: targetGroupId
+                                }
+                            })
+                        );
                         dialogRef.close();
                     });
                 })
