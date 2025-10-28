@@ -4632,6 +4632,7 @@ export class FlowEffects {
                     const connections: ConnectionItem[] = [];
 
                     // Find matching connections based on direction
+                    // Direct connections have distance 0
                     allConnections.each(function (this: any, d: any) {
                         if (request.direction === 'upstream' && d.destinationId === request.componentId) {
                             // Upstream connections: where the selected component is the destination
@@ -4648,7 +4649,8 @@ export class FlowEffects {
                                 destinationType: d.destinationType,
                                 destinationComponentType: d.component?.destination?.type || 'Unknown',
                                 destinationGroupId: d.destinationGroupId,
-                                relationships: d.component?.selectedRelationships || []
+                                relationships: d.component?.selectedRelationships || [],
+                                distance: 0
                             });
                         } else if (request.direction === 'downstream' && d.sourceId === request.componentId) {
                             // Downstream connections: where the selected component is the source
@@ -4665,7 +4667,8 @@ export class FlowEffects {
                                 destinationType: d.destinationType,
                                 destinationComponentType: d.component?.destination?.type || 'Unknown',
                                 destinationGroupId: d.destinationGroupId,
-                                relationships: d.component?.selectedRelationships || []
+                                relationships: d.component?.selectedRelationships || [],
+                                distance: 0
                             });
                         }
                     });
@@ -4687,6 +4690,12 @@ export class FlowEffects {
                         }
                     });
 
+                    const allConnections = d3.selectAll('g.connection');
+                    const originalComponentId = connections.length > 0
+                        ? (direction === 'upstream' ? connections[0].destinationId : connections[0].sourceId)
+                        : null;
+
+                    // Handle navigation when "Go To" is clicked
                     dialogRef.componentInstance.goToConnection.pipe(take(1)).subscribe((payload) => {
                         const { connection, direction } = payload;
 
@@ -4722,6 +4731,109 @@ export class FlowEffects {
                         );
                         dialogRef.close();
                     });
+
+                    // Handle transitive connections toggle
+                    dialogRef.componentInstance.toggleTransitive
+                        .pipe(takeUntil(dialogRef.afterClosed()))
+                        .subscribe((showTransitive: boolean) => {
+                            if (showTransitive && originalComponentId) {
+                                const transitiveConnections: ConnectionItem[] = [];
+                                const visited = new Set<string>();
+                                const componentDistances = new Map<string, number>();
+
+                                // Initialize direct component distances
+                                connections.forEach(c => {
+                                    visited.add(c.id);
+                                    const componentId = direction === 'upstream' ? c.sourceId : c.destinationId;
+                                    componentDistances.set(componentId, 1);
+                                });
+
+                                // Set selected component distance to 0
+                                componentDistances.set(originalComponentId, 0);
+
+                                // Helper function to check if a component is a port that crosses process group boundary
+                                const isPortCrossingBoundary = (componentId: string, componentType: string, groupId: string): boolean => {
+                                    // Input ports at group boundary: sourceGroupId != current process group
+                                    // Output ports at group boundary: destinationGroupId != current process group
+                                    return (componentType.includes('INPUT_PORT') || componentType.includes('OUTPUT_PORT')) &&
+                                           groupId !== processGroupId;
+                                };
+
+                                // Find transitive connections using BFS with distance tracking
+                                // Queue stores: {componentId, distance}
+                                const queue: Array<{id: string, distance: number}> = [];
+
+                                // Initialize queue with direct connections
+                                connections.forEach(c => {
+                                    const componentId = direction === 'upstream' ? c.sourceId : c.destinationId;
+                                    queue.push({id: componentId, distance: 1});
+                                });
+
+                                while (queue.length > 0) {
+                                    const current = queue.shift()!;
+                                    const currentDistance = current.distance;
+
+                                    allConnections.each(function (this: any, d: any) {
+                                        // Skip if we've already processed this connection
+                                        if (visited.has(d.id)) {
+                                            return;
+                                        }
+
+                                        let isTransitive = false;
+                                        let nextComponentId: string | null = null;
+
+                                        if (direction === 'upstream' && d.destinationId === current.id) {
+                                            // Found an upstream connection from the current component
+                                            isTransitive = true;
+                                            nextComponentId = d.sourceId;
+                                        } else if (direction === 'downstream' && d.sourceId === current.id) {
+                                            // Found a downstream connection from the current component
+                                            isTransitive = true;
+                                            nextComponentId = d.destinationId;
+                                        }
+
+                                        if (isTransitive && nextComponentId) {
+                                            visited.add(d.id);
+                                            const nextDistance = currentDistance + 1;
+
+                                            transitiveConnections.push({
+                                                id: d.id,
+                                                name: d.component?.name || d.id,
+                                                sourceId: d.sourceId,
+                                                sourceName: d.component?.source?.name || 'Unknown',
+                                                sourceType: d.sourceType,
+                                                sourceComponentType: d.component?.source?.type || 'Unknown',
+                                                sourceGroupId: d.sourceGroupId,
+                                                destinationId: d.destinationId,
+                                                destinationName: d.component?.destination?.name || 'Unknown',
+                                                destinationType: d.destinationType,
+                                                destinationComponentType: d.component?.destination?.type || 'Unknown',
+                                                destinationGroupId: d.destinationGroupId,
+                                                relationships: d.component?.selectedRelationships || [],
+                                                distance: nextDistance
+                                            });
+
+                                            // Add the next component to the queue to continue traversal
+                                            if (!componentDistances.has(nextComponentId)) {
+                                                queue.push({id: nextComponentId, distance: nextDistance});
+                                                componentDistances.set(nextComponentId, nextDistance);
+                                            }
+                                        }
+                                    });
+
+                                    // Note: When we reach an INPUT_PORT or OUTPUT_PORT that represents a process group boundary,
+                                    // we cannot traverse further without querying connections from parent/child process groups.
+                                    // d3.selectAll only returns connections visible on the current canvas.
+                                    // A complete implementation would require fetching connections from the flow state store
+                                    // for parent/child process groups, which is left for future enhancement.
+                                }
+
+                                dialogRef.componentInstance.setTransitiveConnections(transitiveConnections);
+                            } else {
+                                // Hide transitive connections
+                                dialogRef.componentInstance.setDirectConnections(connections);
+                            }
+                        });
                 })
             ),
         { dispatch: false }
